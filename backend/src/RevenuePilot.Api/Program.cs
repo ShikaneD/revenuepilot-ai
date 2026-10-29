@@ -29,6 +29,19 @@ if (args.Contains("seed") || args.Contains("reseed"))
 static async Task<Business?> DemoBusinessAsync(AppDbContext db, CancellationToken ct) =>
     await db.Businesses.AsNoTracking().Where(b => b.IsDemo).OrderBy(b => b.CreatedAt).FirstOrDefaultAsync(ct);
 
+app.MapGet("/", () => Results.Ok(new
+{
+    name = "RevenuePilot API",
+    status = "running",
+    endpoints = new[]
+    {
+        "/health",
+        "/api/v1/dashboard/summary?days=30",
+        "/api/v1/customers",
+        "/api/v1/risk"
+    }
+}));
+
 app.MapGet("/health", async (TimeProvider clock, AppDbContext db, CancellationToken ct) =>
 {
     var dbOk = await db.Database.CanConnectAsync(ct);
