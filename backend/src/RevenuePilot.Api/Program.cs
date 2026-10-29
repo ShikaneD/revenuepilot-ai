@@ -159,4 +159,23 @@ app.MapGet("/api/v1/risk", async (TimeProvider clock, AppDbContext db, Cancellat
     });
 });
 
+app.MapGet("/api/v1/customers/{id:guid}", async (Guid id, TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+{
+    var business = await DemoBusinessAsync(db, ct);
+    if (business is null)
+        return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
+
+    var detail = await CustomerInsightsService.GetDetailAsync(db, business, id, clock.GetUtcNow().UtcDateTime, ct);
+    if (detail is null)
+        return Results.NotFound(new { error = "Customer not found." });
+
+    return Results.Ok(new
+    {
+        business = new { business.Name, business.Currency, business.TimeZoneId, business.IsDemo },
+        customer = detail.Customer,
+        monthlyRevenue = detail.MonthlyRevenue,
+        orders = detail.Orders
+    });
+});
+
 app.Run();

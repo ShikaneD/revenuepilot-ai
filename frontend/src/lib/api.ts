@@ -79,3 +79,28 @@ export function fetchCustomers(f: { search: string; sort: string; risk: string }
 }
 
 export const fetchRisk = () => getJson<RiskResponse>('/api/v1/risk')
+
+
+export interface MonthlyPoint {
+  month: string
+  revenue: number
+}
+
+export interface OrderHistory {
+  externalOrderId: string
+  orderDateUtc: string
+  status: string
+  totalAmount: number
+  refundAmount: number
+  netAmount: number
+}
+
+export interface CustomerDetailResponse {
+  business: BusinessInfo
+  customer: CustomerInsight
+  monthlyRevenue: MonthlyPoint[]
+  orders: OrderHistory[]
+}
+
+export const fetchCustomer = (id: string) =>
+  getJson<CustomerDetailResponse>(`/api/v1/customers/${id}`)

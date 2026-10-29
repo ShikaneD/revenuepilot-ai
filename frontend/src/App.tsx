@@ -3,6 +3,7 @@ import AppLayout from './components/AppLayout'
 import Landing from './pages/Landing'
 import Overview from './pages/Overview'
 import Customers from './pages/Customers'
+import CustomerDetail from './pages/CustomerDetail'
 import RiskPage from './pages/RiskPage'
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
       <Route path="/app" element={<AppLayout />}>
         <Route index element={<Overview />} />
         <Route path="customers" element={<Customers />} />
+        <Route path="customers/:id" element={<CustomerDetail />} />
         <Route path="risk" element={<RiskPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

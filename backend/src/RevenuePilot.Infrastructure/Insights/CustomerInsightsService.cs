@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RevenuePilot.Domain.Analytics;
 using RevenuePilot.Domain.Churn;
 using RevenuePilot.Domain.Entities;
 using RevenuePilot.Infrastructure.Persistence;
@@ -14,10 +15,15 @@ public sealed record CustomerInsightDto(
     DateTime? LastPurchaseUtc, int PaidOrderCount, decimal TotalRevenue,
     decimal? AverageOrderValue, RiskDto? Risk);
 
+public sealed record OrderHistoryDto(
+    string ExternalOrderId, DateTime OrderDateUtc, string Status,
+    decimal TotalAmount, decimal RefundAmount, decimal NetAmount);
+
+public sealed record CustomerDetailDto(
+    CustomerInsightDto Customer, IReadOnlyList<MonthlyPoint> MonthlyRevenue, IReadOnlyList<OrderHistoryDto> Orders);
+
 public static class CustomerInsightsService
 {
-    private sealed record OrderRow(Guid CustomerId, DateTime OrderDate, decimal Net);
-
     public static async Task<List<CustomerInsightDto>> LoadAsync(
         AppDbContext db, Guid businessId, DateTime nowUtc, CancellationToken ct)
     {
@@ -28,38 +34,60 @@ public static class CustomerInsightsService
         // Only Paid orders count. Net = total minus refund.
         var paid = await db.Orders.AsNoTracking()
             .Where(o => o.BusinessId == businessId && o.Status == OrderStatus.Paid)
-            .Select(o => new OrderRow(o.CustomerId, o.OrderDate, o.TotalAmount - o.RefundAmount))
+            .Select(o => new { o.CustomerId, o.OrderDate, Net = o.TotalAmount - o.RefundAmount })
             .ToListAsync(ct);
 
         var byCustomer = paid.GroupBy(o => o.CustomerId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(o => o.OrderDate).ToList());
+            .ToDictionary(g => g.Key, g => g.Select(o => new NetOrder(o.OrderDate, o.Net)).ToList());
 
         var result = new List<CustomerInsightDto>();
         foreach (var c in customers)
         {
-            var orders = byCustomer.TryGetValue(c.Id, out var found) ? found : new List<OrderRow>();
-            var total = orders.Sum(o => o.Net);
-
-            var score = ChurnScorer.Score(orders.Select(o => new PaidTransaction(o.OrderDate, o.Net)), nowUtc);
-            RiskDto? risk = score is null
-                ? null
-                : new RiskDto(score.Score, score.Band.ToString(), score.Evidence, score.EstimatedExposure,
-                    score.AverageGapDays, score.DaysSinceLastPurchase, SuggestedAction(score.Band));
-
-            result.Add(new CustomerInsightDto(
-                c.Id, c.Name, c.Segment, c.Email,
-                orders.Count > 0 ? orders[^1].OrderDate : null,
-                orders.Count, total,
-                orders.Count > 0 ? total / orders.Count : null,
-                risk));
+            var orders = byCustomer.TryGetValue(c.Id, out var found) ? found : new List<NetOrder>();
+            result.Add(Build(c, orders, nowUtc));
         }
         return result;
     }
 
-    private static string SuggestedAction(RiskBand band) => band switch
+    /// <summary>The customer must belong to the given business, otherwise null is returned.</summary>
+    public static async Task<CustomerDetailDto?> GetDetailAsync(
+        AppDbContext db, Business business, Guid customerId, DateTime nowUtc, CancellationToken ct)
     {
-        RiskBand.High => "Contact this customer personally this week to find out what changed.",
-        RiskBand.Medium => "Send a friendly check-in and ask whether anything has changed.",
-        _ => "No action needed. Keep serving this customer as usual."
-    };
+        var customer = await db.Customers.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == customerId && c.BusinessId == business.Id, ct);
+        if (customer is null) return null;
+
+        var all = await db.Orders.AsNoTracking()
+            .Where(o => o.BusinessId == business.Id && o.CustomerId == customerId)
+            .OrderByDescending(o => o.OrderDate)
+            .ToListAsync(ct);
+
+        var paid = all.Where(o => o.Status == OrderStatus.Paid)
+            .Select(o => new NetOrder(o.OrderDate, o.TotalAmount - o.RefundAmount))
+            .ToList();
+
+        var history = all.Select(o => new OrderHistoryDto(
+            o.ExternalOrderId, o.OrderDate, o.Status.ToString(), o.TotalAmount, o.RefundAmount,
+            o.Status == OrderStatus.Paid ? o.TotalAmount - o.RefundAmount : 0m)).ToList();
+
+        return new CustomerDetailDto(
+            Build(customer, paid, nowUtc),
+            CustomerMetrics.MonthlyRevenue(paid, nowUtc, business.TimeZoneId, 12),
+            history);
+    }
+
+    private static CustomerInsightDto Build(Customer c, IReadOnlyList<NetOrder> paid, DateTime nowUtc)
+    {
+        var summary = CustomerMetrics.Summarise(paid);
+        var score = ChurnScorer.Score(paid.Select(o => new PaidTransaction(o.DateUtc, o.Net)), nowUtc);
+        RiskDto? risk = score is null
+            ? null
+            : new RiskDto(score.Score, score.Band.ToString(), score.Evidence, score.EstimatedExposure,
+                score.AverageGapDays, score.DaysSinceLastPurchase, CustomerMetrics.SuggestedAction(score.Band));
+
+        return new CustomerInsightDto(
+            c.Id, c.Name, c.Segment, c.Email,
+            summary.LastPurchaseUtc, summary.PaidOrderCount, summary.TotalRevenue,
+            summary.AverageOrderValue, risk);
+    }
 }
