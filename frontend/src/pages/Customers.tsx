@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { fetchCustomers } from '../lib/api'
 import { formatDate, formatMoney } from '../lib/format'
@@ -77,7 +78,7 @@ export default function Customers() {
             <tbody>
               {data.customers.map((c) => (
                 <tr key={c.id} className="border-t border-slate-200">
-                  <td className="px-3 py-2 font-medium text-slate-900">{c.name}</td>
+                  <td className="px-3 py-2 font-medium"><Link className="text-indigo-800 underline" to={`/app/customers/${c.id}`}>{c.name}</Link></td>
                   <td className="px-3 py-2">{c.segment ?? '—'}</td>
                   <td className="px-3 py-2">{formatDate(c.lastPurchaseUtc, tz)}</td>
                   <td className="px-3 py-2 text-right">{c.paidOrderCount}</td>

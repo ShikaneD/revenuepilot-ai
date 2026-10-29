@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { fetchRisk } from '../lib/api'
 import { formatDate, formatMoney } from '../lib/format'
 import RiskBadge from '../components/RiskBadge'
@@ -50,7 +51,7 @@ export default function RiskPage() {
             {data.customers.map((c) => (
               <li key={c.id} className="rounded-lg border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="text-base font-semibold">{c.name}</h2>
+                  <h2 className="text-base font-semibold"><Link className="text-indigo-800 underline" to={`/app/customers/${c.id}`}>{c.name}</Link></h2>
                   <RiskBadge band={c.risk.band} score={c.risk.score} />
                   <span className="ml-auto text-sm text-slate-700">
                     Estimated exposure: <strong>{money(c.risk.estimatedExposure)}</strong>
