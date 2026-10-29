@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using RevenuePilot.Domain.Analytics;
+using RevenuePilot.Domain.Churn;
+using RevenuePilot.Domain.Entities;
+using RevenuePilot.Infrastructure.Insights;
 using RevenuePilot.Infrastructure.Persistence;
 using RevenuePilot.Infrastructure.Seeding;
 
@@ -21,6 +24,11 @@ if (args.Contains("seed") || args.Contains("reseed"))
     return;
 }
 
+// TEMPORARY: every endpoint below serves the demo business with no login.
+// Phase 7 replaces this with authentication and a server-side membership check.
+static async Task<Business?> DemoBusinessAsync(AppDbContext db, CancellationToken ct) =>
+    await db.Businesses.AsNoTracking().Where(b => b.IsDemo).OrderBy(b => b.CreatedAt).FirstOrDefaultAsync(ct);
+
 app.MapGet("/health", async (TimeProvider clock, AppDbContext db, CancellationToken ct) =>
 {
     var dbOk = await db.Database.CanConnectAsync(ct);
@@ -33,16 +41,13 @@ app.MapGet("/health", async (TimeProvider clock, AppDbContext db, CancellationTo
     return dbOk ? Results.Ok(body) : Results.Json(body, statusCode: 503);
 });
 
-// TEMPORARY: serves the demo business with no login. Phase 7 replaces this with
-// authentication and a server-side check that the user belongs to the business.
 app.MapGet("/api/v1/dashboard/summary", async (int? days, TimeProvider clock, AppDbContext db, CancellationToken ct) =>
 {
     var n = days ?? 30;
     if (n is not (7 or 30 or 90))
         return Results.BadRequest(new { error = "days must be 7, 30 or 90" });
 
-    var business = await db.Businesses.AsNoTracking()
-        .Where(b => b.IsDemo).OrderBy(b => b.CreatedAt).FirstOrDefaultAsync(ct);
+    var business = await DemoBusinessAsync(db, ct);
     if (business is null)
         return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
 
@@ -74,6 +79,70 @@ app.MapGet("/api/v1/dashboard/summary", async (int? days, TimeProvider clock, Ap
             netRevenue = "Sum of (order total minus refund) for Paid orders in the period. Failed, cancelled and pending orders are excluded.",
             growthPercent = "(current minus previous) / previous x 100, compared with the equivalent period immediately before. Null when the previous period is zero."
         }
+    });
+});
+
+app.MapGet("/api/v1/customers", async (string? search, string? sort, string? risk,
+    TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+{
+    var business = await DemoBusinessAsync(db, ct);
+    if (business is null)
+        return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
+
+    IEnumerable<CustomerInsightDto> q =
+        await CustomerInsightsService.LoadAsync(db, business.Id, clock.GetUtcNow().UtcDateTime, ct);
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var term = search.Trim();
+        q = q.Where(c => c.Name.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    var band = risk?.Trim().ToLowerInvariant();
+    if (band is "low" or "medium" or "high")
+        q = q.Where(c => c.Risk != null && c.Risk.Band.Equals(band, StringComparison.OrdinalIgnoreCase));
+    else if (band == "none")
+        q = q.Where(c => c.Risk == null);
+
+    q = sort?.ToLowerInvariant() switch
+    {
+        "name" => q.OrderBy(c => c.Name),
+        "risk" => q.OrderByDescending(c => c.Risk?.Score ?? -1),
+        "last" => q.OrderByDescending(c => c.LastPurchaseUtc),
+        _ => q.OrderByDescending(c => c.TotalRevenue)
+    };
+
+    var list = q.ToList();
+    return Results.Ok(new
+    {
+        business = new { business.Name, business.Currency, business.TimeZoneId, business.IsDemo },
+        count = list.Count,
+        customers = list
+    });
+});
+
+app.MapGet("/api/v1/risk", async (TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+{
+    var business = await DemoBusinessAsync(db, ct);
+    if (business is null)
+        return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
+
+    var all = await CustomerInsightsService.LoadAsync(db, business.Id, clock.GetUtcNow().UtcDateTime, ct);
+    var flagged = all.Where(c => c.Risk is not null && c.Risk.Band != "Low")
+        .OrderByDescending(c => c.Risk!.Score).ToList();
+    var options = new ChurnOptions();
+
+    return Results.Ok(new
+    {
+        business = new { business.Name, business.Currency, business.TimeZoneId, business.IsDemo },
+        scoredCustomers = all.Count(c => c.Risk is not null),
+        notScoredCustomers = all.Count(c => c.Risk is null),
+        highCount = flagged.Count(c => c.Risk!.Band == "High"),
+        mediumCount = flagged.Count(c => c.Risk!.Band == "Medium"),
+        totalEstimatedExposure = flagged.Sum(c => c.Risk!.EstimatedExposure),
+        bands = new { medium = options.MediumThreshold, high = options.HighThreshold },
+        note = "Scores come from a rule-based risk indicator, not a validated prediction. Exposure is an estimate that assumes each customer keeps buying at their historical pace.",
+        customers = flagged
     });
 });
 
