@@ -4,6 +4,7 @@ const LINKS = [
   { to: '/app', label: 'Overview', end: true },
   { to: '/app/customers', label: 'Customers', end: false },
   { to: '/app/risk', label: 'Churn risk', end: false },
+  { to: '/app/opportunities', label: 'Opportunities', end: false },
 ]
 
 export default function AppLayout() {
@@ -28,7 +29,7 @@ export default function AppLayout() {
           ))}
         </nav>
         <p className="mt-6 hidden px-2 text-xs text-slate-400 md:block">
-          More pages arrive in later phases: opportunities, AI analyst, reports and imports.
+          More pages arrive in later phases: AI analyst, reports and imports.
         </p>
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8">

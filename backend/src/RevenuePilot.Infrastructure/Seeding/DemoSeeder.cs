@@ -28,8 +28,10 @@ public static class DemoSeeder
         foreach (var id in existing)
         {
             await db.Orders.Where(o => o.BusinessId == id).ExecuteDeleteAsync(ct);
+            await db.Opportunities.Where(o => o.BusinessId == id).ExecuteDeleteAsync(ct);
             await db.Customers.Where(c => c.BusinessId == id).ExecuteDeleteAsync(ct);
             await db.Businesses.Where(b => b.Id == id).ExecuteDeleteAsync(ct);
+            
         }
 
         var rnd = new Random(20261028); // fixed seed: same shape every time

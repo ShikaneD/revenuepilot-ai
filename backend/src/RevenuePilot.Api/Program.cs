@@ -5,6 +5,7 @@ using RevenuePilot.Domain.Entities;
 using RevenuePilot.Infrastructure.Insights;
 using RevenuePilot.Infrastructure.Persistence;
 using RevenuePilot.Infrastructure.Seeding;
+using RevenuePilot.Infrastructure.Tracking;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,6 +30,11 @@ if (args.Contains("seed") || args.Contains("reseed"))
 static async Task<Business?> DemoBusinessAsync(AppDbContext db, CancellationToken ct) =>
     await db.Businesses.AsNoTracking().Where(b => b.IsDemo).OrderBy(b => b.CreatedAt).FirstOrDefaultAsync(ct);
 
+static IResult ToResult<T>(Outcome<T> outcome) =>
+    outcome.Error is null
+        ? Results.Json(outcome.Value, statusCode: outcome.Status)
+        : Results.Json(new { error = outcome.Error }, statusCode: outcome.Status);
+
 app.MapGet("/", () => Results.Ok(new
 {
     name = "RevenuePilot API",
@@ -38,7 +44,8 @@ app.MapGet("/", () => Results.Ok(new
         "/health",
         "/api/v1/dashboard/summary?days=30",
         "/api/v1/customers",
-        "/api/v1/risk"
+        "/api/v1/risk",
+        "/api/v1/opportunities"
     }
 }));
 
@@ -134,6 +141,25 @@ app.MapGet("/api/v1/customers", async (string? search, string? sort, string? ris
     });
 });
 
+app.MapGet("/api/v1/customers/{id:guid}", async (Guid id, TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+{
+    var business = await DemoBusinessAsync(db, ct);
+    if (business is null)
+        return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
+
+    var detail = await CustomerInsightsService.GetDetailAsync(db, business, id, clock.GetUtcNow().UtcDateTime, ct);
+    if (detail is null)
+        return Results.NotFound(new { error = "Customer not found." });
+
+    return Results.Ok(new
+    {
+        business = new { business.Name, business.Currency, business.TimeZoneId, business.IsDemo },
+        customer = detail.Customer,
+        monthlyRevenue = detail.MonthlyRevenue,
+        orders = detail.Orders
+    });
+});
+
 app.MapGet("/api/v1/risk", async (TimeProvider clock, AppDbContext db, CancellationToken ct) =>
 {
     var business = await DemoBusinessAsync(db, ct);
@@ -159,23 +185,41 @@ app.MapGet("/api/v1/risk", async (TimeProvider clock, AppDbContext db, Cancellat
     });
 });
 
-app.MapGet("/api/v1/customers/{id:guid}", async (Guid id, TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+app.MapGet("/api/v1/opportunities", async (AppDbContext db, CancellationToken ct) =>
 {
     var business = await DemoBusinessAsync(db, ct);
     if (business is null)
         return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
 
-    var detail = await CustomerInsightsService.GetDetailAsync(db, business, id, clock.GetUtcNow().UtcDateTime, ct);
-    if (detail is null)
-        return Results.NotFound(new { error = "Customer not found." });
-
+    var list = await OpportunityService.ListAsync(db, business.Id, ct);
     return Results.Ok(new
     {
         business = new { business.Name, business.Currency, business.TimeZoneId, business.IsDemo },
-        customer = detail.Customer,
-        monthlyRevenue = detail.MonthlyRevenue,
-        orders = detail.Orders
+        openEstimatedValue = list.OpenEstimatedValue,
+        recoveredValue = list.RecoveredValue,
+        openCount = list.OpenCount,
+        recoveredCount = list.RecoveredCount,
+        dismissedCount = list.DismissedCount,
+        opportunities = list.Opportunities
     });
+});
+
+app.MapPost("/api/v1/opportunities", async (CreateOpportunityRequest req, TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+{
+    var business = await DemoBusinessAsync(db, ct);
+    if (business is null)
+        return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
+
+    return ToResult(await OpportunityService.CreateAsync(db, business, req.CustomerId, clock.GetUtcNow().UtcDateTime, ct));
+});
+
+app.MapPost("/api/v1/opportunities/{id:guid}/status", async (Guid id, ChangeStatusRequest req, TimeProvider clock, AppDbContext db, CancellationToken ct) =>
+{
+    var business = await DemoBusinessAsync(db, ct);
+    if (business is null)
+        return Results.NotFound(new { error = "No business found. Run: dotnet run -- seed" });
+
+    return ToResult(await OpportunityService.ChangeStatusAsync(db, business.Id, id, req, clock.GetUtcNow().UtcDateTime, ct));
 });
 
 app.Run();

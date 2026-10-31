@@ -104,3 +104,67 @@ export interface CustomerDetailResponse {
 
 export const fetchCustomer = (id: string) =>
   getJson<CustomerDetailResponse>(`/api/v1/customers/${id}`)
+
+async function sendJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`
+    try {
+      const data = await res.json()
+      if (data?.error) message = data.error
+    } catch {
+      /* response had no JSON body */
+    }
+    throw new Error(message)
+  }
+  return res.json() as Promise<T>
+}
+
+export type OpportunityStatus = 'New' | 'InProgress' | 'Recovered' | 'Dismissed'
+
+export interface OpportunityActivity {
+  createdAtUtc: string
+  fromStatus: string | null
+  toStatus: string
+  recoveredValue: number | null
+  note: string | null
+}
+
+export interface Opportunity {
+  id: string
+  customerId: string
+  customerName: string
+  title: string
+  reason: string
+  estimatedValue: number
+  recoveredValue: number
+  priority: 'High' | 'Medium'
+  status: OpportunityStatus
+  createdAtUtc: string
+  resolvedAtUtc: string | null
+  activities: OpportunityActivity[]
+}
+
+export interface OpportunitiesResponse {
+  business: BusinessInfo
+  openEstimatedValue: number
+  recoveredValue: number
+  openCount: number
+  recoveredCount: number
+  dismissedCount: number
+  opportunities: Opportunity[]
+}
+
+export const fetchOpportunities = () => getJson<OpportunitiesResponse>('/api/v1/opportunities')
+
+export const createOpportunity = (customerId: string) =>
+  sendJson<Opportunity>('/api/v1/opportunities', { customerId })
+
+export const changeOpportunityStatus = (
+  id: string,
+  body: { status: string; recoveredValue?: number; note?: string },
+) => sendJson<string>(`/api/v1/opportunities/${id}/status`, body)

@@ -106,6 +106,116 @@ namespace RevenuePilot.Infrastructure.Persistence.Migrations
                     b.ToTable("customers", (string)null);
                 });
 
+            modelBuilder.Entity("RevenuePilot.Domain.Entities.Opportunity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("EstimatedValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<decimal>("RecoveredValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId", "CustomerId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" IN ('New', 'InProgress')");
+
+                    b.HasIndex("BusinessId", "Status");
+
+                    b.ToTable("opportunities", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_opportunities_recovered_only_when_recovered", "\"RecoveredValue\" = 0 OR \"Status\" = 'Recovered'");
+
+                            t.HasCheckConstraint("ck_opportunities_values_not_negative", "\"EstimatedValue\" >= 0 AND \"RecoveredValue\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("RevenuePilot.Domain.Entities.OpportunityActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("FromStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("OpportunityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("RecoveredValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId", "OpportunityId", "CreatedAt");
+
+                    b.ToTable("opportunity_activities", (string)null);
+                });
+
             modelBuilder.Entity("RevenuePilot.Domain.Entities.Order", b =>
                 {
                     b.Property<Guid>("Id")
@@ -166,6 +276,32 @@ namespace RevenuePilot.Infrastructure.Persistence.Migrations
                     b.HasOne("RevenuePilot.Domain.Entities.Business", null)
                         .WithMany()
                         .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RevenuePilot.Domain.Entities.Opportunity", b =>
+                {
+                    b.HasOne("RevenuePilot.Domain.Entities.Business", null)
+                        .WithMany()
+                        .HasForeignKey("BusinessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RevenuePilot.Domain.Entities.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("BusinessId", "CustomerId")
+                        .HasPrincipalKey("BusinessId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("RevenuePilot.Domain.Entities.OpportunityActivity", b =>
+                {
+                    b.HasOne("RevenuePilot.Domain.Entities.Opportunity", null)
+                        .WithMany()
+                        .HasForeignKey("BusinessId", "OpportunityId")
+                        .HasPrincipalKey("BusinessId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
