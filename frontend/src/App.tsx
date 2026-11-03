@@ -5,6 +5,7 @@ import Overview from './pages/Overview'
 import Customers from './pages/Customers'
 import CustomerDetail from './pages/CustomerDetail'
 import RiskPage from './pages/RiskPage'
+import Opportunities from './pages/Opportunities'
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="customers" element={<Customers />} />
         <Route path="customers/:id" element={<CustomerDetail />} />
         <Route path="risk" element={<RiskPage />} />
+        <Route path="opportunities" element={<Opportunities />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
